@@ -1,0 +1,1 @@
+from .model import self_net as self_net
