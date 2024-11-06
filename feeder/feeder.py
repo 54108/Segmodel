@@ -16,14 +16,14 @@ class Feeder(torch.utils.data.Dataset):
                  data_path,
                  label_path,
                  mode,
-                 transform,
-                 label_transform,
+                #  transform,
+                #  label_transform,
                  ):
         self.mode = mode
         self.data_path = data_path
         self.label_path = label_path
-        self.transform = transform
-        self.label_transform = label_transform
+        # self.transform = transform
+        # self.label_transform = label_transform
 
         self.load_data()
 

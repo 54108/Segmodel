@@ -31,7 +31,7 @@ class Processor():
         self.load_state()
         self.best_train_miou = 0
         self.best_test_miou = 0
-        self.miou = IoU(self.arg.num_class)
+        self.miou = IoU(self.arg.model_args['num_class'])
 
     def load_data(self):
         Feeder = import_class(self.arg.feeder)
@@ -128,6 +128,7 @@ class Processor():
 
                 step = epoch * n_batch + batch_idx
                 train_writer.add_scalar('loss_step', loss.data.item(), step)
+                train_writer.add_scalar('miou', miou, step)
                 train_writer.add_scalar('lr', self.scheduler.get_last_lr(), step)
 
             self.scheduler.step()
@@ -178,7 +179,7 @@ class Processor():
         
         if miou > self.best_test_miou:
             self.best_test_miou = miou
-        print("Eval Best Acc@1: {} Acc@5: {} ".format(self.best_test_acc1,self.best_test_acc5))
+        print("Eval Best miou: {} ".format(self.best_test_miou))
         
         if save_score and self.arg.phase == 'test':
             np.save('{}/score.npy'.format(self.arg.work_dir),score)

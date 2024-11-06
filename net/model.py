@@ -391,12 +391,12 @@ class Up(nn.Module):
     
 
 class self_net(nn.Module):
-    def __init__(self, n_channels = 3, n_classes = 4, encoder_relu = True):
+    def __init__(self, num_class = 4, channel = 3, encoder_relu = True):
         super(self_net, self).__init__()
-        self.n_channels = n_channels
-        self.n_classes = n_classes
+        self.n_channels = channel
+        self.n_classes = num_class
         self.SPConv = nn.Sequential(
-            nn.Conv2d(n_channels, 32, kernel_size=3,stride=2, padding=1),
+            nn.Conv2d(channel, 32, kernel_size=3,stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 64, kernel_size=3,stride=2, padding=1),
             nn.ReLU(inplace=True),
@@ -471,7 +471,7 @@ class self_net(nn.Module):
         
         self.transposed_conv = nn.ConvTranspose2d(
             16,
-            n_classes,
+            self.n_classes,
             kernel_size=3,
             stride=2,
             padding=1,
