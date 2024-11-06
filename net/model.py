@@ -96,5 +96,4 @@ class self_net(nn.Module):
         x = self.up1(x3, x2)
         x = self.up2(x, x1)
         logits = self.outc(x)
-        print(logits.shape)
         return logits
