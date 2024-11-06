@@ -18,9 +18,10 @@ model_args:
   channel: 3
 
 #optim
+optimizer: Adam
 weight_decay: 1e-4
 base_lr: 1e-2
-step: [10, 50]
+# step: [10, 50]
 
 # training
 device: 0
