@@ -134,8 +134,8 @@ class IoU:
     @staticmethod
     def per_class_iu(hist):
         """计算每个类别的IoU"""
-        print('Defect class IoU as follows:')
-        print(np.diag(hist)[1:] / np.maximum((hist.sum(1) + hist.sum(0) - np.diag(hist))[1:], 1))
+        # print('Defect class IoU as follows:')
+        # print(np.diag(hist)[1:] / np.maximum((hist.sum(1) + hist.sum(0) - np.diag(hist))[1:], 1))
         return np.diag(hist)[1:] / np.maximum((hist.sum(1) + hist.sum(0) - np.diag(hist))[1:], 1)
 
     @staticmethod

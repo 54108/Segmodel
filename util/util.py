@@ -8,7 +8,6 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-
 def import_class(name):
     components = name.split('.')
     mod = __import__(components[0])

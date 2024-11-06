@@ -17,6 +17,11 @@ from util.parser import get_parser
 from util.iou import IoU
 from util.util import import_class
 
+def print_model_parameters(model):
+    """打印模型的参数量大小，单位为百万"""
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"模型参数量: {total_params / 1e6:.2f} M")
+
 class Processor():
     """ 
         Processor for Skeleton-based Action Recgnition
@@ -94,6 +99,7 @@ class Processor():
 
     def train(self):
         train_writer = SummaryWriter(self.arg.work_dir)
+        print_model_parameters(self.model)
         self.model.train()
         for epoch in range(self.arg.start_epoch, self.arg.num_epoch):
             print("Epoch:[{}/{}]".format(epoch+1,self.arg.num_epoch))
