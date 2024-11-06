@@ -119,8 +119,8 @@ class IoU:
         mIoUs = self.per_class_iu(self.hist)
         mPA = self.per_class_PA(self.hist)
         miou = np.nanmean(mIoUs)
-        print('===> mIoU: ' + str(round(miou * 100, 4)) +
-            '; mPA: ' + str(round(np.nanmean(mPA) * 100, 4)))
+        # print('===> mIoU: ' + str(round(miou * 100, 4)) +
+        #     '; mPA: ' + str(round(np.nanmean(mPA) * 100, 4)))
         return mIoUs, miou
 
     @staticmethod
