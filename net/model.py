@@ -44,14 +44,18 @@ class DABModule(nn.Module):
         self.bn_relu_1 = BNPReLU(nIn)
         self.conv3x3 = Conv(nIn, nIn // 2, kSize, 1, padding=1, bn_acti=True)
 
-        self.dconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
-                             padding=(1, 0), groups=nIn // 2, bn_acti=True)
-        self.dconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
-                             padding=(0, 1), groups=nIn // 2, bn_acti=True)
-        self.ddconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
-                              padding=(1 * d, 0), dilation=(d, 1), groups=nIn // 2, bn_acti=True)
-        self.ddconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
-                              padding=(0, 1 * d), dilation=(1, d), groups=nIn // 2, bn_acti=True)
+        # self.dconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
+        #                      padding=(1, 0), groups=nIn // 2, bn_acti=True)
+        # self.dconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
+        #                      padding=(0, 1), groups=nIn // 2, bn_acti=True)
+        # self.ddconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
+        #                       padding=(1 * d, 0), dilation=(d, 1), groups=nIn // 2, bn_acti=True)
+        # self.ddconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
+        #                       padding=(0, 1 * d), dilation=(1, d), groups=nIn // 2, bn_acti=True)
+        self.dconv3x3 = Conv(nIn // 2, nIn // 2, (dkSize, dkSize), 1,
+                            padding=1, bn_acti=True)
+        self.ddconv3x3 = Conv(nIn // 2, nIn // 2, (dkSize, dkSize), 1,
+                            padding=d, dilation=d, bn_acti=True)
 
         self.bn_relu_2 = BNPReLU(nIn // 2)
         self.conv1x1 = Conv(nIn // 2, nIn, 1, 1, padding=0, bn_acti=False)
@@ -60,10 +64,12 @@ class DABModule(nn.Module):
         output = self.bn_relu_1(input)
         output = self.conv3x3(output)
 
-        br1 = self.dconv3x1(output)
-        br1 = self.dconv1x3(br1)
-        br2 = self.ddconv3x1(output)
-        br2 = self.ddconv1x3(br2)
+        # br1 = self.dconv3x1(output)
+        # br1 = self.dconv1x3(br1)
+        # br2 = self.ddconv3x1(output)
+        # br2 = self.ddconv1x3(br2)
+        br1 = self.dconv3x3(output)
+        br2 = self.ddconv3x3(output)
 
         output = br1 + br2
         output = self.bn_relu_2(output)
@@ -114,7 +120,7 @@ class InputInjection(nn.Module):
 
 
 class self_net(nn.Module):
-    def __init__(self, num_class=4, channel = 3, block_1=3, block_2=6):
+    def __init__(self, num_class=4, channel = 3, block_1=1, block_2=1):
         super().__init__()
         self.init_conv = nn.Sequential(
             Conv(3, 32, 3, 2, padding=1, bn_acti=True),
