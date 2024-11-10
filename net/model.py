@@ -1,178 +1,132 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class Conv(nn.Module):
-    def __init__(self, nIn, nOut, kSize, stride, padding, dilation=(1, 1), groups=1, bn_acti=False, bias=False):
+class AxialDW(nn.Module):
+    def __init__(self, dim, mixer_kernel, dilation = 1):
+        super().__init__()
+        h, w = mixer_kernel
+        self.dw_h = nn.Conv2d(dim, dim, kernel_size=(h, 1), padding='same', groups = dim, dilation = dilation)
+        self.dw_w = nn.Conv2d(dim, dim, kernel_size=(1, w), padding='same', groups = dim, dilation = dilation)
+
+    def forward(self, x):
+        x = x + self.dw_h(x) + self.dw_w(x)
+        return x
+
+class EncoderBlock(nn.Module):
+    """Encoding then downsampling"""
+    def __init__(self, in_c, out_c, mixer_kernel = (7, 7)):
+        super().__init__()
+        self.dw = AxialDW(in_c, mixer_kernel = (7, 7))
+        self.bn = nn.BatchNorm2d(in_c)
+        self.pw = nn.Conv2d(in_c, out_c, kernel_size=1)
+        self.down = nn.MaxPool2d((2,2))
+        self.act = nn.GELU()
+
+    def forward(self, x):
+        skip = self.bn(self.dw(x))
+        x = self.act(self.down(self.pw(skip)))
+        return x, skip
+
+class DecoderBlock(nn.Module):
+    """Upsampling then decoding"""
+    def __init__(self, in_c, out_c, mixer_kernel = (7, 7)):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2)
+        self.pw = nn.Conv2d(in_c + out_c, out_c,kernel_size=1)
+        self.bn = nn.BatchNorm2d(out_c)
+        self.dw = AxialDW(out_c, mixer_kernel = (7, 7))
+        self.act = nn.GELU()
+        self.pw2 = nn.Conv2d(out_c, out_c, kernel_size=1)
+
+    def forward(self, x, skip):
+        x = self.up(x)
+        x = torch.cat([x, skip], dim=1)
+        x = self.act(self.pw2(self.dw(self.bn(self.pw(x)))))
+        return x
+    
+class BottleNeckBlock(nn.Module):
+    """Axial dilated DW convolution"""
+    def __init__(self, dim):
         super().__init__()
 
-        self.bn_acti = bn_acti
+        gc = dim//4
+        self.pw1 = nn.Conv2d(dim, gc, kernel_size=1)
+        self.dw1 = AxialDW(gc, mixer_kernel = (3, 3), dilation = 1)
+        self.dw2 = AxialDW(gc, mixer_kernel = (3, 3), dilation = 2)
+        self.dw3 = AxialDW(gc, mixer_kernel = (3, 3), dilation = 3)
 
-        self.conv = nn.Conv2d(nIn, nOut, kernel_size=kSize,
-                              stride=stride, padding=padding,
-                              dilation=dilation, groups=groups, bias=bias)
+        self.bn = nn.BatchNorm2d(4*gc)
+        self.pw2 = nn.Conv2d(4*gc, dim, kernel_size=1)
+        self.act = nn.GELU()
 
-        if self.bn_acti:
-            self.bn_prelu = BNPReLU(nOut)
+    def forward(self, x):
+        x = self.pw1(x)
+        x = torch.cat([x, self.dw1(x), self.dw2(x), self.dw3(x)], 1)
+        x = self.act(self.pw2(self.bn(x)))
+        return x
 
-    def forward(self, input):
-        output = self.conv(input)
-
-        if self.bn_acti:
-            output = self.bn_prelu(output)
-
-        return output
-
-
-class BNPReLU(nn.Module):
-    def __init__(self, nIn):
+class base_net(nn.Module):
+    def __init__(self, num_class = 4, channel = 3, use_bottleneck = False):
         super().__init__()
-        self.bn = nn.BatchNorm2d(nIn, eps=1e-3)
-        self.acti = nn.PReLU(nIn)
+        self.num_class = num_class
+        self.channel = channel
 
-    def forward(self, input):
-        output = self.bn(input)
-        output = self.acti(output)
+        """Encoder"""
+        self.conv_in = nn.Conv2d(self.channel, 16, kernel_size=7, padding='same')
+        self.e1 = EncoderBlock(16, 32)
+        self.e2 = EncoderBlock(32, 64)
+        self.e3 = EncoderBlock(64, 128)
+        # self.e4 = EncoderBlock(128, 256)
+        # self.e5 = EncoderBlock(256, 512)
 
-        return output
+        """Bottle Neck"""
+        if use_bottleneck:
+            self.b5 = BottleNeckBlock(128)
 
+        # """Decoder"""
+        # self.d5 = DecoderBlock(512, 256)
+        # self.d4 = DecoderBlock(256, 128)
+        self.d3 = DecoderBlock(128, 64)
+        self.d2 = DecoderBlock(64, 32)
+        self.d1 = DecoderBlock(32, 16)
+        self.conv_out = nn.Conv2d(16, self.num_class, kernel_size=1)
 
-class DABModule(nn.Module):
-    def __init__(self, nIn, d=1, kSize=3, dkSize=3):
-        super().__init__()
+    def forward(self, x):
+        """Encoder"""
+        x = self.conv_in(x)
+        x, skip1 = self.e1(x)
+        x, skip2 = self.e2(x)
+        x, skip3 = self.e3(x)
+        # x, skip4 = self.e4(x)
+        # x, skip5 = self.e5(x)
 
-        self.bn_relu_1 = BNPReLU(nIn)
-        self.conv3x3 = Conv(nIn, nIn // 2, kSize, 1, padding=1, bn_acti=True)
+        """BottleNeck"""
+        if hasattr(self, 'b5'):
+            x = self.b5(x)         # (512, 8, 8)
 
-        self.dconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
-                             padding=(1, 0), groups=nIn // 2, bn_acti=True)
-        self.dconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
-                             padding=(0, 1), groups=nIn // 2, bn_acti=True)
-        self.ddconv3x1 = Conv(nIn // 2, nIn // 2, (dkSize, 1), 1,
-                              padding=(1 * d, 0), dilation=(d, 1), groups=nIn // 2, bn_acti=True)
-        self.ddconv1x3 = Conv(nIn // 2, nIn // 2, (1, dkSize), 1,
-                              padding=(0, 1 * d), dilation=(1, d), groups=nIn // 2, bn_acti=True)
-        # self.dconv3x3 = Conv(nIn // 2, nIn // 2, (dkSize, dkSize), 1,
-        #                     padding=1, bn_acti=True)
-        # self.ddconv3x3 = Conv(nIn // 2, nIn // 2, (dkSize, dkSize), 1,
-        #                     padding=d, dilation=d, bn_acti=True)
-
-        self.bn_relu_2 = BNPReLU(nIn // 2)
-        self.conv1x1 = Conv(nIn // 2, nIn, 1, 1, padding=0, bn_acti=False)
-
-    def forward(self, input):
-        output = self.bn_relu_1(input)
-        output = self.conv3x3(output)
-
-        br1 = self.dconv3x1(output)
-        br1 = self.dconv1x3(br1)
-        br2 = self.ddconv3x1(output)
-        br2 = self.ddconv1x3(br2)
-        # br1 = self.dconv3x3(output)
-        # br2 = self.ddconv3x3(output)
-
-        output = br1 + br2
-        output = self.bn_relu_2(output)
-        output = self.conv1x1(output)
-
-        return output + input
-
-
-class DownSamplingBlock(nn.Module):
-    def __init__(self, nIn, nOut):
-        super().__init__()
-        self.nIn = nIn
-        self.nOut = nOut
-
-        if self.nIn < self.nOut:
-            nConv = nOut - nIn
-        else:
-            nConv = nOut
-
-        self.conv3x3 = Conv(nIn, nConv, kSize=3, stride=2, padding=1)
-        self.max_pool = nn.MaxPool2d(2, stride=2)
-        self.bn_prelu = BNPReLU(nOut)
-
-    def forward(self, input):
-        output = self.conv3x3(input)
-
-        if self.nIn < self.nOut:
-            max_pool = self.max_pool(input)
-            output = torch.cat([output, max_pool], 1)
-
-        output = self.bn_prelu(output)
-
-        return output
-
-
-class InputInjection(nn.Module):
-    def __init__(self, ratio):
-        super().__init__()
-        self.pool = nn.ModuleList()
-        for i in range(0, ratio):
-            self.pool.append(nn.AvgPool2d(3, stride=2, padding=1))
-
-    def forward(self, input):
-        for pool in self.pool:
-            input = pool(input)
-
-        return input
-
-
+        # """Decoder"""
+        # x = self.d5(x, skip5)
+        # x = self.d4(x, skip4)
+        x = self.d3(x, skip3)
+        x = self.d2(x, skip2)
+        x = self.d1(x, skip1)
+        x = self.conv_out(x)
+        return x
+    
 class self_net(nn.Module):
-    def __init__(self, num_class=4, channel = 3, block_1=1, block_2=1):
+    def __init__(self, num_class = 4, channel = 3):
         super().__init__()
-        self.init_conv = nn.Sequential(
-            Conv(3, 32, 3, 2, padding=1, bn_acti=True),
-            Conv(32, 32, 3, 1, padding=1, bn_acti=True),
-            Conv(32, 32, 3, 1, padding=1, bn_acti=True),
-        )
+        self.num_class = num_class
+        self.channel = channel
 
-        self.down_1 = InputInjection(1)  # down-sample the image 1 times
-        self.down_2 = InputInjection(2)  # down-sample the image 2 times
-        self.down_3 = InputInjection(3)  # down-sample the image 3 times
+        self.class0 = base_net(num_class = 1, channel = channel)
+        self.class1 = base_net(num_class = 3, channel = channel, use_bottleneck = True)
+        # self.class2 = base_net(num_class = 1, channel = channel)
+        # self.class3 = base_net(num_class = 1, channel = channel)
 
-        self.bn_prelu_1 = BNPReLU(32 + 3)
-
-        # DAB Block 1
-        self.downsample_1 = DownSamplingBlock(32 + 3, 64)
-        self.DAB_Block_1 = nn.Sequential()
-        for i in range(0, block_1):
-            self.DAB_Block_1.add_module("DAB_Module_1_" + str(i), DABModule(64, d=2))
-        self.bn_prelu_2 = BNPReLU(128 + 3)
-
-        # DAB Block 2
-        dilation_block_2 = [4, 4, 8, 8, 16, 16]
-        self.downsample_2 = DownSamplingBlock(128 + 3, 128)
-        self.DAB_Block_2 = nn.Sequential()
-        for i in range(0, block_2):
-            self.DAB_Block_2.add_module("DAB_Module_2_" + str(i),
-                                        DABModule(128, d=dilation_block_2[i]))
-        self.bn_prelu_3 = BNPReLU(256 + 3)
-
-        self.classifier = nn.Sequential(Conv(259, num_class, 1, 1, padding=0))
-
-    def forward(self, input):
-
-        output0 = self.init_conv(input)
-
-        down_1 = self.down_1(input)
-        down_2 = self.down_2(input)
-        down_3 = self.down_3(input)
-
-        output0_cat = self.bn_prelu_1(torch.cat([output0, down_1], 1))
-
-        # DAB Block 1
-        output1_0 = self.downsample_1(output0_cat)
-        output1 = self.DAB_Block_1(output1_0)
-        output1_cat = self.bn_prelu_2(torch.cat([output1, output1_0, down_2], 1))
-
-        # DAB Block 2
-        output2_0 = self.downsample_2(output1_cat)
-        output2 = self.DAB_Block_2(output2_0)
-        output2_cat = self.bn_prelu_3(torch.cat([output2, output2_0, down_3], 1))
-
-        out = self.classifier(output2_cat)
-        out = F.interpolate(out, input.size()[2:], mode='bilinear', align_corners=False)
-
-        return out
+    def forward(self, x):
+        x0 = self.class0(x)
+        x1 = self.class1(x)
+        # x2 = self.class2(x)
+        # x3 = self.class3(x)
+        return torch.cat([x0, x1], 1)

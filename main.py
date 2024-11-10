@@ -140,6 +140,7 @@ class Processor():
             self.scheduler.step()
 
             print("Train iou: {} Train miou: {} Mean loss: {} LR: {}".format(iou, miou, loss_epoch/n_batch, self.scheduler.get_last_lr()))
+            print(self.miou.hist)
 
             if miou > self.best_train_miou:
                 self.best_train_miou = miou
