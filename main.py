@@ -17,10 +17,7 @@ from util.parser import get_parser
 from util.iou import IoU
 from util.util import import_class
 
-def print_model_parameters(model):
-    """打印模型的参数量大小，单位为百万"""
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"模型参数量: {total_params / 1e6:.2f} M")
+from fvcore.nn import FlopCountAnalysis, parameter_count
 
 class Processor():
     """ 
@@ -99,7 +96,8 @@ class Processor():
 
     def train(self):
         train_writer = SummaryWriter(self.arg.work_dir)
-        print_model_parameters(self.model)
+        params = parameter_count(self.model)
+        print(f"Parameters: {params['']}")
         self.model.train()
         for epoch in range(self.arg.start_epoch, self.arg.num_epoch):
             print("Epoch:[{}/{}]".format(epoch+1,self.arg.num_epoch))
@@ -140,7 +138,6 @@ class Processor():
             self.scheduler.step()
 
             print("Train iou: {} Train miou: {} Mean loss: {} LR: {}".format(iou, miou, loss_epoch/n_batch, self.scheduler.get_last_lr()))
-            print(self.miou.hist)
 
             if miou > self.best_train_miou:
                 self.best_train_miou = miou
@@ -170,7 +167,11 @@ class Processor():
                 label = label.long().to(self.device, non_blocking=True)
                 
                 output = self.model(data)
+                print(data.shape)
+                flops = FlopCountAnalysis(self.model, data)
                 loss = self.loss(output, label)
+                print(f"FLOPs: {flops.total()}")
+                assert 1 == 0
 
                 self.miou.add(output, label)
                 

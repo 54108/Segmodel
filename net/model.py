@@ -29,19 +29,20 @@ class EncoderBlock(nn.Module):
 
 class DecoderBlock(nn.Module):
     """Upsampling then decoding"""
-    def __init__(self, in_c, out_c, mixer_kernel = (7, 7)):
+    def __init__(self, in_c, out_c, mixer_kernel=(7, 7)):
         super().__init__()
-        self.up = nn.Upsample(scale_factor=2)
-        self.pw = nn.Conv2d(in_c + out_c, out_c,kernel_size=1)
-        self.bn = nn.BatchNorm2d(out_c)
-        self.dw = AxialDW(out_c, mixer_kernel = (7, 7))
+        self.up = nn.ConvTranspose2d(in_c, in_c, kernel_size=2, stride=2)
+        self.pw = nn.Conv2d(in_c + out_c, out_c, kernel_size=1)
+        self.bn1 = nn.BatchNorm2d(out_c)
+        self.dw = AxialDW(out_c, mixer_kernel=(7, 7))
+        self.bn2 = nn.BatchNorm2d(out_c)
         self.act = nn.GELU()
         self.pw2 = nn.Conv2d(out_c, out_c, kernel_size=1)
 
     def forward(self, x, skip):
         x = self.up(x)
         x = torch.cat([x, skip], dim=1)
-        x = self.act(self.pw2(self.dw(self.bn(self.pw(x)))))
+        x = self.act(self.bn2(self.dw(self.bn1(self.pw(x)))))
         return x
     
 class BottleNeckBlock(nn.Module):
@@ -76,16 +77,15 @@ class base_net(nn.Module):
         self.e1 = EncoderBlock(16, 32)
         self.e2 = EncoderBlock(32, 64)
         self.e3 = EncoderBlock(64, 128)
-        # self.e4 = EncoderBlock(128, 256)
-        # self.e5 = EncoderBlock(256, 512)
 
         """Bottle Neck"""
         if use_bottleneck:
-            self.b5 = BottleNeckBlock(128)
+            # self.b1 = BottleNeckBlock(16)
+            # self.b2 = BottleNeckBlock(32)
+            # self.b3 = BottleNeckBlock(64)
+            self.b1 = BottleNeckBlock(128)
 
         # """Decoder"""
-        # self.d5 = DecoderBlock(512, 256)
-        # self.d4 = DecoderBlock(256, 128)
         self.d3 = DecoderBlock(128, 64)
         self.d2 = DecoderBlock(64, 32)
         self.d1 = DecoderBlock(32, 16)
@@ -97,16 +97,15 @@ class base_net(nn.Module):
         x, skip1 = self.e1(x)
         x, skip2 = self.e2(x)
         x, skip3 = self.e3(x)
-        # x, skip4 = self.e4(x)
-        # x, skip5 = self.e5(x)
+        # skip1 = self.b1(skip1) if hasattr(self, 'b1') else skip1
+        # skip2 = self.b2(skip2) if hasattr(self, 'b2') else skip2
+        # skip3 = self.b3(skip3) if hasattr(self, 'b3') else skip3
 
         """BottleNeck"""
-        if hasattr(self, 'b5'):
-            x = self.b5(x)         # (512, 8, 8)
+        if hasattr(self, 'b1'):
+            x = self.b1(x)
 
         # """Decoder"""
-        # x = self.d5(x, skip5)
-        # x = self.d4(x, skip4)
         x = self.d3(x, skip3)
         x = self.d2(x, skip2)
         x = self.d1(x, skip1)
@@ -119,14 +118,8 @@ class self_net(nn.Module):
         self.num_class = num_class
         self.channel = channel
 
-        self.class0 = base_net(num_class = 1, channel = channel)
-        self.class1 = base_net(num_class = 3, channel = channel, use_bottleneck = True)
-        # self.class2 = base_net(num_class = 1, channel = channel)
-        # self.class3 = base_net(num_class = 1, channel = channel)
+        self.class0 = base_net(num_class = 4, channel = channel, use_bottleneck = True)
 
     def forward(self, x):
-        x0 = self.class0(x)
-        x1 = self.class1(x)
-        # x2 = self.class2(x)
-        # x3 = self.class3(x)
-        return torch.cat([x0, x1], 1)
+        x = self.class0(x)
+        return x
